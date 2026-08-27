@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Local data / DB
+*.db
+*.sqlite3
+/data/
+
+# Env & secrets
+.env
+
+# Models cache (downloaded at build time)
+/models/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
