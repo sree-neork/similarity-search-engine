@@ -29,13 +29,15 @@ def _run_search(req: SearchRequest, session: Session) -> SearchResponse:
     ns = _resolve_namespace(session, req.namespace)
 
     top_k = req.top_k or settings.default_top_k
+    offset = req.offset
     w_sem = req.w_semantic if req.w_semantic is not None else settings.w_semantic
     w_fuz = req.w_fuzzy if req.w_fuzzy is not None else settings.w_fuzzy
     w_acr = req.w_acronym if req.w_acronym is not None else settings.w_acronym
 
-    # Pull a wider candidate pool so fuzzy/acronym can promote items the
-    # pure vector search ranked lower (e.g. heavy misspellings).
-    pool = max(top_k * settings.candidate_multiplier, settings.min_candidates)
+    # Pull a wider candidate pool so fuzzy/acronym can promote items the pure
+    # vector search ranked lower (e.g. heavy misspellings). The pool must also
+    # be large enough to cover the requested page (offset + page size).
+    pool = max((offset + top_k) * settings.candidate_multiplier, settings.min_candidates)
 
     query_vec = embeddings.embed_one(req.q)
     candidates = vector_store.search(ns.id, query_vec, limit=pool)
@@ -64,8 +66,18 @@ def _run_search(req: SearchRequest, session: Session) -> SearchResponse:
         )
 
     scored.sort(key=lambda h: h.score, reverse=True)
-    top = scored[:top_k]
-    return SearchResponse(namespace=ns.name, query=req.q, count=len(top), results=top)
+    total = len(scored)
+    page = scored[offset : offset + top_k]
+    return SearchResponse(
+        namespace=ns.name,
+        query=req.q,
+        count=len(page),
+        total=total,
+        offset=offset,
+        limit=top_k,
+        has_more=offset + top_k < total,
+        results=page,
+    )
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -73,7 +85,8 @@ def search_get(
     session: Session = Depends(get_session),
     namespace: str = Query(..., description="Namespace id or name"),
     q: str = Query(..., min_length=1, description="Query keyword"),
-    top_k: Optional[int] = Query(None, ge=1, le=100),
+    top_k: Optional[int] = Query(None, ge=1, le=100, description="Page size"),
+    offset: int = Query(0, ge=0, description="Results to skip (pagination)"),
     min_score: float = Query(0.0, ge=0.0, le=1.0),
     w_semantic: Optional[float] = Query(None, ge=0.0),
     w_fuzzy: Optional[float] = Query(None, ge=0.0),
@@ -83,6 +96,7 @@ def search_get(
         namespace=namespace,
         q=q,
         top_k=top_k,
+        offset=offset,
         min_score=min_score,
         w_semantic=w_semantic,
         w_fuzzy=w_fuzzy,

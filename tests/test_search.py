@@ -28,6 +28,33 @@ def test_top_k_limits_and_sorted(client, maincourse):
     assert scores == sorted(scores, reverse=True)
 
 
+def test_pagination(client, maincourse):
+    # Page 1: first 2 of the 4 dishes, ranked by score.
+    p1 = client.get(
+        "/search", params={"namespace": maincourse, "q": "curry", "top_k": 2, "offset": 0}
+    ).json()
+    assert p1["total"] == len(DISHES)
+    assert p1["offset"] == 0 and p1["limit"] == 2
+    assert p1["count"] == 2 and p1["has_more"] is True
+
+    # Page 2: next 2, no overlap with page 1, and now exhausted.
+    p2 = client.get(
+        "/search", params={"namespace": maincourse, "q": "curry", "top_k": 2, "offset": 2}
+    ).json()
+    assert p2["offset"] == 2 and p2["count"] == 2
+    assert p2["has_more"] is False
+
+    ids_p1 = {h["keyword_id"] for h in p1["results"]}
+    ids_p2 = {h["keyword_id"] for h in p2["results"]}
+    assert ids_p1.isdisjoint(ids_p2)
+
+    # Offset past the end yields an empty page.
+    p3 = client.get(
+        "/search", params={"namespace": maincourse, "q": "curry", "top_k": 2, "offset": 99}
+    ).json()
+    assert p3["count"] == 0 and p3["results"] == [] and p3["has_more"] is False
+
+
 def test_namespace_isolation(client):
     """Same query must not cross-leak between namespaces."""
     client.post("/keywords", json={"namespace": "iso_a", "text": "Chicken Biriyani"}).raise_for_status()

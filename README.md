@@ -118,11 +118,11 @@ sequenceDiagram
     C->>API: GET /search?namespace&q&top_k
     API->>DB: resolve namespace (id or name)
     API->>EM: embed(query) -> vector
-    API->>Q: cosine search in namespace (candidate pool = top_k×5, min 50)
+    API->>Q: cosine search in namespace (pool covers offset+top_k, min 50)
     Q-->>API: candidates [{text, cosine}]
     API->>S: blend cosine + fuzzy + acronym per candidate
     S-->>API: scored + re-ranked
-    API-->>C: top_k results sorted by score desc
+    API-->>C: page results[offset : offset+top_k] + total, has_more
 ```
 
 The service pulls a **wider candidate pool** from Qdrant than requested, so fuzzy/acronym scoring
@@ -222,9 +222,16 @@ only ever listed, inspected, or deleted.
 | DELETE | `/namespaces/{id}`   | cascades to keywords (SQLite + Qdrant)       |
 
 ### Search
-`GET /search?namespace={id|name}&q={query}&top_k=10&min_score=0`
+`GET /search?namespace={id|name}&q={query}&top_k=10&offset=0&min_score=0`
 (optional per-request weights `w_semantic`, `w_fuzzy`, `w_acronym`).
 `POST /search` accepts the same fields as a JSON body.
+
+**Pagination:** `top_k` is the page size and `offset` skips leading results — page N is
+`offset = N * top_k`. Results are sorted by score descending. The response carries `total`
+(ranked hits found), `offset`, `limit`, and `has_more` for "load more" / paged UIs.
+
+> `total` is counted over the retrieved candidate pool (sized to cover `offset + top_k` with
+> re-ranking headroom), which for typical namespace sizes is the full result set.
 
 Response:
 
@@ -233,6 +240,10 @@ Response:
   "namespace": "maincourse",
   "query": "chkn biriyani",
   "count": 1,
+  "total": 1,
+  "offset": 0,
+  "limit": 10,
+  "has_more": false,
   "results": [
     {
       "keyword_id": 1,

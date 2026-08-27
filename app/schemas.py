@@ -77,7 +77,8 @@ class KeywordsAdded(BaseModel):
 class SearchRequest(BaseModel):
     namespace: str = Field(description="Namespace id or name")
     q: str = Field(min_length=1, description="Query keyword")
-    top_k: Optional[int] = Field(default=None, ge=1, le=100)
+    top_k: Optional[int] = Field(default=None, ge=1, le=100, description="Page size")
+    offset: int = Field(default=0, ge=0, description="Number of leading results to skip (pagination)")
     min_score: float = Field(default=0.0, ge=0.0, le=1.0)
     w_semantic: Optional[float] = Field(default=None, ge=0.0)
     w_fuzzy: Optional[float] = Field(default=None, ge=0.0)
@@ -96,5 +97,9 @@ class SearchHit(BaseModel):
 class SearchResponse(BaseModel):
     namespace: str
     query: str
-    count: int
+    count: int  # number of hits on this page
+    total: int  # total ranked hits found (across the retrieved candidate pool)
+    offset: int
+    limit: int  # page size (top_k)
+    has_more: bool
     results: list[SearchHit]
