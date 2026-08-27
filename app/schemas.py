@@ -98,7 +98,8 @@ class SearchResponse(BaseModel):
     namespace: str
     query: str
     count: int  # number of hits on this page
-    total: int  # total ranked hits found (across the retrieved candidate pool)
+    total: int  # total matching keywords (see total_is_exact)
+    total_is_exact: bool  # False only for large namespaces scored via a bounded pool
     offset: int
     limit: int  # page size (top_k)
     has_more: bool

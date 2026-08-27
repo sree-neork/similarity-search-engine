@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     # Search defaults
     default_top_k: int = 10
+    # Namespaces with at most this many keywords are scored exhaustively (exact
+    # total + ranking). Larger ones use a bounded cosine candidate pool (tier 2).
+    exact_scan_limit: int = 2000
+    candidate_multiplier: int = 5  # tier-2 pool = (offset + top_k) * this
+    min_candidates: int = 50  # tier-2 pool floor
 
     # Hybrid score weights
     w_semantic: float = 0.5

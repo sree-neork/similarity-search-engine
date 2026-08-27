@@ -29,6 +29,10 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${EMBED_DIM:-384}
       DATABASE_URL: sqlite:////data/simsearch.db
+      DEFAULT_TOP_K: ${DEFAULT_TOP_K:-10}
+      EXACT_SCAN_LIMIT: ${EXACT_SCAN_LIMIT:-2000}
+      CANDIDATE_MULTIPLIER: ${CANDIDATE_MULTIPLIER:-5}
+      MIN_CANDIDATES: ${MIN_CANDIDATES:-50}
       W_SEMANTIC: ${W_SEMANTIC:-0.5}
       W_FUZZY: ${W_FUZZY:-0.4}
       W_ACRONYM: ${W_ACRONYM:-0.1}

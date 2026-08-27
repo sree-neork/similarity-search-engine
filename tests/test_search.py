@@ -66,6 +66,35 @@ def test_total_is_exact_namespace_count(client, ns_name):
         assert r["count"] == min(top_k, len(words))
 
 
+def test_two_tier_large_namespace(client, ns_name, monkeypatch):
+    """Force tier 2 (bounded pool) and check exact vs approximate totals."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "exact_scan_limit", 3)  # >3 keywords -> tier 2
+
+    dishes = ["Chicken Biriyani", "Mutton Biriyani", "Egg Biriyani", "Fish Curry", "Green Salad"]
+    client.post("/keywords", json={"namespace": ns_name, "texts": dishes}).raise_for_status()
+
+    # min_score=0: every keyword matches, so total is still exact (= namespace size)
+    # even though ranking came from the bounded pool.
+    r = client.get("/search", params={"namespace": ns_name, "q": "biriyani", "top_k": 2}).json()
+    assert r["total"] == len(dishes)
+    assert r["total_is_exact"] is True
+    assert r["count"] == 2
+
+    # min_score>0 in tier 2: total is approximate (pool-based), flagged as such.
+    r2 = client.get(
+        "/search", params={"namespace": ns_name, "q": "biriyani", "top_k": 2, "min_score": 0.4}
+    ).json()
+    assert r2["total_is_exact"] is False
+
+
+def test_small_namespace_total_is_exact(client, ns_name):
+    client.post("/keywords", json={"namespace": ns_name, "texts": ["a", "b", "c"]}).raise_for_status()
+    r = client.get("/search", params={"namespace": ns_name, "q": "a", "top_k": 5}).json()
+    assert r["total_is_exact"] is True  # small namespace -> tier 1
+
+
 def test_min_score_filters_exact_total(client, ns_name):
     dishes = ["Chicken Biriyani", "Fish Curry", "Chocolate Cake", "Green Salad", "Ice Cream"]
     client.post("/keywords", json={"namespace": ns_name, "texts": dishes}).raise_for_status()

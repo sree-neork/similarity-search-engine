@@ -34,14 +34,26 @@ def _run_search(req: SearchRequest, session: Session) -> SearchResponse:
     w_fuz = req.w_fuzzy if req.w_fuzzy is not None else settings.w_fuzzy
     w_acr = req.w_acronym if req.w_acronym is not None else settings.w_acronym
 
-    # Score every keyword in the namespace so `total` is exact and fuzzy/acronym
-    # matches with low cosine can't be excluded by a capped candidate pool.
     namespace_size = vector_store.count_namespace(ns.id)
-
     query_vec = embeddings.embed_one(req.q)
-    candidates = (
-        vector_store.search(ns.id, query_vec, limit=namespace_size) if namespace_size else []
-    )
+
+    # Two tiers by namespace size:
+    #  - Tier 1 (small): score EVERY keyword -> exact total + exact ranking.
+    #  - Tier 2 (large): score only a bounded cosine candidate pool that covers
+    #    the requested page -> fast, but total/ranking are approximate. (When
+    #    min_score is 0 every keyword matches, so the exact total is still known
+    #    cheaply: it's the namespace size.)
+    if namespace_size <= settings.exact_scan_limit:
+        pool_limit = namespace_size
+        exhaustive = True
+    else:
+        pool_limit = min(
+            namespace_size,
+            max((offset + top_k) * settings.candidate_multiplier, settings.min_candidates),
+        )
+        exhaustive = False
+
+    candidates = vector_store.search(ns.id, query_vec, limit=pool_limit) if pool_limit else []
 
     scored: list[SearchHit] = []
     for c in candidates:
@@ -67,13 +79,23 @@ def _run_search(req: SearchRequest, session: Session) -> SearchResponse:
         )
 
     scored.sort(key=lambda h: h.score, reverse=True)
-    total = len(scored)
+
+    if exhaustive:
+        total, total_is_exact = len(scored), True
+    elif req.min_score <= 0.0:
+        # Every keyword passes at min_score=0 -> exact total without a full scan.
+        total, total_is_exact = namespace_size, True
+    else:
+        # Approximate: only the retrieved pool was scored (lower bound).
+        total, total_is_exact = len(scored), False
+
     page = scored[offset : offset + top_k]
     return SearchResponse(
         namespace=ns.name,
         query=req.q,
         count=len(page),
         total=total,
+        total_is_exact=total_is_exact,
         offset=offset,
         limit=top_k,
         has_more=offset + top_k < total,

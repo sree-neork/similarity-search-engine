@@ -125,9 +125,10 @@ sequenceDiagram
     API-->>C: page results[offset : offset+top_k] + total, has_more
 ```
 
-The service scores **every keyword in the namespace**, so fuzzy/acronym scoring can promote items
-the pure vector search ranked lower (e.g. a heavy misspelling like `chkn`), and the reported
-`total` is exact.
+For small namespaces the service scores **every keyword** (tier 1), so fuzzy/acronym scoring can
+promote items the pure vector search ranked lower (e.g. a heavy misspelling like `chkn`) and `total`
+is exact. Large namespaces switch to a **bounded cosine pool** (tier 2) — see
+[Two-tier scaling](#search) below.
 
 ### How a query is scored
 
@@ -229,12 +230,20 @@ only ever listed, inspected, or deleted.
 
 **Pagination:** `top_k` is the page size and `offset` skips leading results — page N is
 `offset = N * top_k`. Results are sorted by score descending. The response carries `total`,
-`offset`, `limit`, and `has_more` for "load more" / paged UIs.
+`total_is_exact`, `offset`, `limit`, and `has_more` for "load more" / paged UIs.
 
-> `total` is an **exact** count of the namespace's keywords that match (score ≥ `min_score`).
-> Every keyword in the namespace is scored on each search, so pagination and totals are exact and
-> fuzzy/acronym matches are never missed. With the default `min_score=0`, `total` equals the
-> namespace's keyword count.
+**Two-tier scaling (`total` accuracy).** The hybrid score mixes embedding cosine with fuzzy/acronym
+signals that a vector index can't pre-filter, so an *exact* total requires scoring every keyword.
+The service picks a tier by namespace size (`EXACT_SCAN_LIMIT`, default 2000):
+
+| Tier | When | Ranking & `total` | `total_is_exact` |
+|------|------|-------------------|------------------|
+| 1 — exhaustive | namespace ≤ `EXACT_SCAN_LIMIT` | scores every keyword — exact | `true` |
+| 2 — bounded pool | namespace > `EXACT_SCAN_LIMIT` | scores a cosine top-N pool covering the page — approximate | `false` |
+
+In tier 2, `min_score=0` (the type-ahead default) still yields an **exact** `total` for free — every
+keyword matches, so `total` = namespace size and `total_is_exact` stays `true`. `total_is_exact` is
+only `false` for a large namespace searched with `min_score > 0`.
 
 Response:
 
@@ -244,6 +253,7 @@ Response:
   "query": "chkn biriyani",
   "count": 1,
   "total": 1,
+  "total_is_exact": true,
   "offset": 0,
   "limit": 10,
   "has_more": false,
@@ -304,7 +314,10 @@ All settings come from environment variables (see `.env.example`):
 | `EMBED_MODEL`                   | `sentence-transformers/all-MiniLM-L6-v2`    | any fastembed model              |
 | `EMBED_DIM`                     | `384`                                       | must match the model's dimension |
 | `DATABASE_URL`                  | `sqlite:////data/simsearch.db`              | metadata store                   |
-| `DEFAULT_TOP_K`                 | `10`                                        | default result count             |
+| `DEFAULT_TOP_K`                 | `10`                                        | default page size                |
+| `EXACT_SCAN_LIMIT`              | `2000`                                      | max namespace size scored exactly (tier 1) |
+| `CANDIDATE_MULTIPLIER`          | `5`                                         | tier-2 pool = `(offset+top_k) × this` |
+| `MIN_CANDIDATES`                | `50`                                        | tier-2 pool floor                |
 | `W_SEMANTIC` / `W_FUZZY` / `W_ACRONYM` | `0.5` / `0.4` / `0.1`                | hybrid score weights             |
 
 To swap the embedding model, change `EMBED_MODEL` **and** `EMBED_DIM` together and rebuild.
