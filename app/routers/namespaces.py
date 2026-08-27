@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
@@ -7,7 +5,7 @@ from sqlmodel import Session, func, select
 from app import vector_store
 from app.db import get_session
 from app.models import Keyword, Namespace
-from app.schemas import NamespaceRead, NamespaceUpdate
+from app.schemas import NamespaceRead
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
@@ -68,28 +66,6 @@ def get_namespace(namespace_id: int, session: Session = Depends(get_session)):
     ns = session.get(Namespace, namespace_id)
     if not ns:
         raise HTTPException(status_code=404, detail="Namespace not found.")
-    return _to_read(session, ns)
-
-
-@router.put("/{namespace_id}", response_model=NamespaceRead)
-def update_namespace(
-    namespace_id: int, body: NamespaceUpdate, session: Session = Depends(get_session)
-):
-    ns = session.get(Namespace, namespace_id)
-    if not ns:
-        raise HTTPException(status_code=404, detail="Namespace not found.")
-    if body.name is not None:
-        ns.name = body.name.strip()
-    if body.description is not None:
-        ns.description = body.description
-    ns.updated_at = datetime.now(timezone.utc)
-    session.add(ns)
-    try:
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(status_code=409, detail=f"Namespace '{body.name}' already exists.")
-    session.refresh(ns)
     return _to_read(session, ns)
 
 

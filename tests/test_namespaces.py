@@ -22,13 +22,13 @@ def test_namespace_autocreated_on_keyword_add(client, ns_name):
     assert matches[0]["keyword_count"] == 2
 
 
-def test_namespace_get_update_delete(client, ns_name):
+def test_namespace_get_and_delete(client, ns_name):
     ns_id = client.post("/keywords", json={"namespace": ns_name, "text": "x"}).json()["namespace_id"]
 
     assert client.get(f"/namespaces/{ns_id}").status_code == 200
 
-    r = client.put(f"/namespaces/{ns_id}", json={"description": "sugary"})
-    assert r.status_code == 200 and r.json()["description"] == "sugary"
+    # Namespaces are immutable — no update endpoint.
+    assert client.put(f"/namespaces/{ns_id}", json={"description": "sugary"}).status_code == 405
 
     assert client.delete(f"/namespaces/{ns_id}").status_code == 204
     assert client.get(f"/namespaces/{ns_id}").status_code == 404

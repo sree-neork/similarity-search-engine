@@ -212,13 +212,13 @@ Namespaces are created implicitly here — no standalone create endpoint.
 `POST /keywords` returns `{"namespace", "namespace_id", "namespace_created", "created": [...]}`.
 
 ### Namespaces (management)
-No create endpoint — namespaces come into existence when you add a keyword.
+Namespaces are immutable once created — they come into existence when you add a keyword and are
+only ever listed, inspected, or deleted.
 
 | Method | Path                 | Body / notes                                 |
 |--------|----------------------|----------------------------------------------|
 | GET    | `/namespaces`        | `?limit=&offset=` — includes `keyword_count` |
 | GET    | `/namespaces/{id}`   |                                              |
-| PUT    | `/namespaces/{id}`   | `{"name": "?", "description": "?"}`           |
 | DELETE | `/namespaces/{id}`   | cascades to keywords (SQLite + Qdrant)       |
 
 ### Search
