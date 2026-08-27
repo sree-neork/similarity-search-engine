@@ -118,15 +118,16 @@ sequenceDiagram
     C->>API: GET /search?namespace&q&top_k
     API->>DB: resolve namespace (id or name)
     API->>EM: embed(query) -> vector
-    API->>Q: cosine search in namespace (pool covers offset+top_k, min 50)
+    API->>Q: cosine search over ALL keywords in namespace
     Q-->>API: candidates [{text, cosine}]
     API->>S: blend cosine + fuzzy + acronym per candidate
-    S-->>API: scored + re-ranked
+    S-->>API: scored + re-ranked (exact total)
     API-->>C: page results[offset : offset+top_k] + total, has_more
 ```
 
-The service pulls a **wider candidate pool** from Qdrant than requested, so fuzzy/acronym scoring
-can promote items the pure vector search ranked lower (e.g. a heavy misspelling like `chkn`).
+The service scores **every keyword in the namespace**, so fuzzy/acronym scoring can promote items
+the pure vector search ranked lower (e.g. a heavy misspelling like `chkn`), and the reported
+`total` is exact.
 
 ### How a query is scored
 
@@ -227,11 +228,13 @@ only ever listed, inspected, or deleted.
 `POST /search` accepts the same fields as a JSON body.
 
 **Pagination:** `top_k` is the page size and `offset` skips leading results — page N is
-`offset = N * top_k`. Results are sorted by score descending. The response carries `total`
-(ranked hits found), `offset`, `limit`, and `has_more` for "load more" / paged UIs.
+`offset = N * top_k`. Results are sorted by score descending. The response carries `total`,
+`offset`, `limit`, and `has_more` for "load more" / paged UIs.
 
-> `total` is counted over the retrieved candidate pool (sized to cover `offset + top_k` with
-> re-ranking headroom), which for typical namespace sizes is the full result set.
+> `total` is an **exact** count of the namespace's keywords that match (score ≥ `min_score`).
+> Every keyword in the namespace is scored on each search, so pagination and totals are exact and
+> fuzzy/acronym matches are never missed. With the default `min_score=0`, `total` equals the
+> namespace's keyword count.
 
 Response:
 

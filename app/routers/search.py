@@ -34,13 +34,14 @@ def _run_search(req: SearchRequest, session: Session) -> SearchResponse:
     w_fuz = req.w_fuzzy if req.w_fuzzy is not None else settings.w_fuzzy
     w_acr = req.w_acronym if req.w_acronym is not None else settings.w_acronym
 
-    # Pull a wider candidate pool so fuzzy/acronym can promote items the pure
-    # vector search ranked lower (e.g. heavy misspellings). The pool must also
-    # be large enough to cover the requested page (offset + page size).
-    pool = max((offset + top_k) * settings.candidate_multiplier, settings.min_candidates)
+    # Score every keyword in the namespace so `total` is exact and fuzzy/acronym
+    # matches with low cosine can't be excluded by a capped candidate pool.
+    namespace_size = vector_store.count_namespace(ns.id)
 
     query_vec = embeddings.embed_one(req.q)
-    candidates = vector_store.search(ns.id, query_vec, limit=pool)
+    candidates = (
+        vector_store.search(ns.id, query_vec, limit=namespace_size) if namespace_size else []
+    )
 
     scored: list[SearchHit] = []
     for c in candidates:

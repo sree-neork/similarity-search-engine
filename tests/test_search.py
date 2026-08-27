@@ -55,6 +55,31 @@ def test_pagination(client, maincourse):
     assert p3["count"] == 0 and p3["results"] == [] and p3["has_more"] is False
 
 
+def test_total_is_exact_namespace_count(client, ns_name):
+    words = [f"item {i}" for i in range(23)]
+    client.post("/keywords", json={"namespace": ns_name, "texts": words}).raise_for_status()
+
+    # total counts every matching keyword, independent of the page size.
+    for top_k in (1, 5, 100):
+        r = client.get("/search", params={"namespace": ns_name, "q": "item", "top_k": top_k}).json()
+        assert r["total"] == len(words)  # min_score=0 -> all match
+        assert r["count"] == min(top_k, len(words))
+
+
+def test_min_score_filters_exact_total(client, ns_name):
+    dishes = ["Chicken Biriyani", "Fish Curry", "Chocolate Cake", "Green Salad", "Ice Cream"]
+    client.post("/keywords", json={"namespace": ns_name, "texts": dishes}).raise_for_status()
+
+    # A strong query for one dish + a high threshold excludes the unrelated ones,
+    # so the exact total drops below the namespace size.
+    r = client.get(
+        "/search", params={"namespace": ns_name, "q": "biriyani", "top_k": 10, "min_score": 0.5}
+    ).json()
+    assert 0 < r["total"] < len(dishes)
+    assert all(h["score"] >= 0.5 for h in r["results"])
+    assert "Chicken Biriyani" in {h["text"] for h in r["results"]}
+
+
 def test_namespace_isolation(client):
     """Same query must not cross-leak between namespaces."""
     client.post("/keywords", json={"namespace": "iso_a", "text": "Chicken Biriyani"}).raise_for_status()

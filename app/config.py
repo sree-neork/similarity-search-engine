@@ -21,8 +21,6 @@ class Settings(BaseSettings):
 
     # Search defaults
     default_top_k: int = 10
-    candidate_multiplier: int = 5
-    min_candidates: int = 50
 
     # Hybrid score weights
     w_semantic: float = 0.5

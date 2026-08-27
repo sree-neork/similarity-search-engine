@@ -87,6 +87,19 @@ def delete_by_namespace(namespace_id: int) -> None:
     )
 
 
+def count_namespace(namespace_id: int) -> int:
+    """Exact number of indexed keyword vectors in a namespace."""
+    settings = get_settings()
+    res = _client().count(
+        collection_name=settings.qdrant_collection,
+        count_filter=qm.Filter(
+            must=[qm.FieldCondition(key="namespace_id", match=qm.MatchValue(value=namespace_id))]
+        ),
+        exact=True,
+    )
+    return res.count
+
+
 def search(namespace_id: int, vector: list[float], limit: int) -> list[dict]:
     """Cosine search within a namespace. Returns [{keyword_id, text, score}]."""
     settings = get_settings()
