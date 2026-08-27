@@ -1,10 +1,11 @@
-def test_keyword_crud_and_reembed(client, namespace):
-    ns_id = namespace["id"]
-
-    # Bulk add
-    r = client.post(f"/namespaces/{ns_id}/keywords", json={"texts": ["Chicken Biriyani", "Fish Curry"]})
+def test_keyword_crud_and_reembed(client, ns_name):
+    # Bulk add — auto-creates the namespace.
+    r = client.post("/keywords", json={"namespace": ns_name, "texts": ["Chicken Biriyani", "Fish Curry"]})
     assert r.status_code == 201
-    created = r.json()
+    body = r.json()
+    assert body["namespace_created"] is True
+    ns_id = body["namespace_id"]
+    created = body["created"]
     assert len(created) == 2
     kw_id = created[0]["id"]
 
@@ -29,5 +30,5 @@ def test_keyword_crud_and_reembed(client, namespace):
     assert client.get(f"/keywords/{kw_id}").status_code == 404
 
 
-def test_add_keyword_to_missing_namespace(client):
-    assert client.post("/namespaces/999999/keywords", json={"text": "x"}).status_code == 404
+def test_add_requires_text(client, ns_name):
+    assert client.post("/keywords", json={"namespace": ns_name}).status_code == 422

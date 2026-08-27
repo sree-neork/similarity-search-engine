@@ -6,7 +6,8 @@ from sqlmodel import Session, select
 from app import embeddings, vector_store
 from app.db import get_session
 from app.models import Keyword, Namespace
-from app.schemas import KeywordCreate, KeywordRead, KeywordUpdate
+from app.routers.namespaces import get_or_create_namespace
+from app.schemas import KeywordCreate, KeywordRead, KeywordsAdded, KeywordUpdate
 
 router = APIRouter(tags=["keywords"])
 
@@ -21,19 +22,20 @@ def _to_read(kw: Keyword) -> KeywordRead:
     )
 
 
-@router.post("/namespaces/{namespace_id}/keywords", response_model=list[KeywordRead], status_code=201)
-def add_keywords(
-    namespace_id: int, body: KeywordCreate, session: Session = Depends(get_session)
-):
-    ns = session.get(Namespace, namespace_id)
-    if not ns:
-        raise HTTPException(status_code=404, detail="Namespace not found.")
+@router.post("/keywords", response_model=KeywordsAdded, status_code=201)
+def add_keywords(body: KeywordCreate, session: Session = Depends(get_session)):
+    """Add keyword(s) to a namespace given by name.
 
+    If the namespace doesn't exist it is created and the keyword(s) added to it;
+    if it already exists the keyword(s) are added directly to it.
+    """
     texts = body.all_texts()
     if not texts:
         raise HTTPException(status_code=422, detail="No valid keyword text provided.")
 
-    keywords = [Keyword(namespace_id=namespace_id, text=t) for t in texts]
+    ns, created = get_or_create_namespace(session, body.namespace)
+
+    keywords = [Keyword(namespace_id=ns.id, text=t) for t in texts]
     session.add_all(keywords)
     session.commit()
     for kw in keywords:
@@ -41,12 +43,17 @@ def add_keywords(
 
     vectors = embeddings.embed_many([kw.text for kw in keywords])
     points = [
-        vector_store.make_point(kw.id, namespace_id, kw.text, vec)
+        vector_store.make_point(kw.id, ns.id, kw.text, vec)
         for kw, vec in zip(keywords, vectors)
     ]
     vector_store.upsert_batch(points)
 
-    return [_to_read(kw) for kw in keywords]
+    return KeywordsAdded(
+        namespace=ns.name,
+        namespace_id=ns.id,
+        namespace_created=created,
+        created=[_to_read(kw) for kw in keywords],
+    )
 
 
 @router.get("/namespaces/{namespace_id}/keywords", response_model=list[KeywordRead])

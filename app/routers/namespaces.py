@@ -7,7 +7,7 @@ from sqlmodel import Session, func, select
 from app import vector_store
 from app.db import get_session
 from app.models import Keyword, Namespace
-from app.schemas import NamespaceCreate, NamespaceRead, NamespaceUpdate
+from app.schemas import NamespaceRead, NamespaceUpdate
 
 router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
@@ -26,17 +26,31 @@ def _to_read(session: Session, ns: Namespace) -> NamespaceRead:
     )
 
 
-@router.post("", response_model=NamespaceRead, status_code=201)
-def create_namespace(body: NamespaceCreate, session: Session = Depends(get_session)):
-    ns = Namespace(name=body.name.strip(), description=body.description)
+def get_or_create_namespace(session: Session, name: str) -> tuple[Namespace, bool]:
+    """Fetch a namespace by name, creating it if it doesn't exist.
+
+    Returns (namespace, created) where `created` is True only when a new
+    namespace was inserted. Namespaces are created implicitly when keywords are
+    added, so there is no standalone create endpoint.
+    """
+    name = name.strip()
+    ns = session.exec(select(Namespace).where(Namespace.name == name)).first()
+    if ns:
+        return ns, False
+
+    ns = Namespace(name=name)
     session.add(ns)
     try:
         session.commit()
     except IntegrityError:
+        # Lost a race with a concurrent insert — fetch the existing row.
         session.rollback()
-        raise HTTPException(status_code=409, detail=f"Namespace '{body.name}' already exists.")
+        ns = session.exec(select(Namespace).where(Namespace.name == name)).first()
+        if ns is None:
+            raise
+        return ns, False
     session.refresh(ns)
-    return _to_read(session, ns)
+    return ns, True
 
 
 @router.get("", response_model=list[NamespaceRead])

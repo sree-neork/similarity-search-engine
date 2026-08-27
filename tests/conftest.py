@@ -33,11 +33,8 @@ def client(_in_memory_qdrant):
 
 
 @pytest.fixture
-def namespace(client):
-    """A fresh, uniquely-named namespace per test."""
+def ns_name():
+    """A fresh, unique namespace name per test (created implicitly on keyword add)."""
     import uuid
 
-    name = f"ns_{uuid.uuid4().hex[:8]}"
-    r = client.post("/namespaces", json={"name": name})
-    assert r.status_code == 201
-    return r.json()
+    return f"ns_{uuid.uuid4().hex[:8]}"

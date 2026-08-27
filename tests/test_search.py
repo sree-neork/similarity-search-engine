@@ -4,16 +4,16 @@ DISHES = ["Chicken Biriyani", "Paneer Butter Masala", "Fish Curry", "Mutton Roga
 
 
 @pytest.fixture
-def maincourse(client, namespace):
-    ns_id = namespace["id"]
-    client.post(f"/namespaces/{ns_id}/keywords", json={"texts": DISHES}).raise_for_status()
-    return namespace
+def maincourse(client, ns_name):
+    """Seed a namespace (by name) with the demo dishes and return its name."""
+    client.post("/keywords", json={"namespace": ns_name, "texts": DISHES}).raise_for_status()
+    return ns_name
 
 
 @pytest.mark.parametrize("query", ["chkn biriyani", "CB", "Chicken", "biriyani"])
 def test_biriyani_cases_return_chicken_biriyani(client, maincourse, query):
     """The four example cases: misspelling, abbreviation, and two partial/semantic."""
-    r = client.get("/search", params={"namespace": maincourse["name"], "q": query, "top_k": 3})
+    r = client.get("/search", params={"namespace": maincourse, "q": query, "top_k": 3})
     assert r.status_code == 200
     results = r.json()["results"]
     assert results, f"no results for {query!r}"
@@ -21,7 +21,7 @@ def test_biriyani_cases_return_chicken_biriyani(client, maincourse, query):
 
 
 def test_top_k_limits_and_sorted(client, maincourse):
-    r = client.get("/search", params={"namespace": maincourse["name"], "q": "curry", "top_k": 2})
+    r = client.get("/search", params={"namespace": maincourse, "q": "curry", "top_k": 2})
     results = r.json()["results"]
     assert len(results) <= 2
     scores = [h["score"] for h in results]
@@ -29,11 +29,9 @@ def test_top_k_limits_and_sorted(client, maincourse):
 
 
 def test_namespace_isolation(client):
-    """Same keyword in two namespaces must not cross-leak."""
-    a = client.post("/namespaces", json={"name": "iso_a"}).json()
-    b = client.post("/namespaces", json={"name": "iso_b"}).json()
-    client.post(f"/namespaces/{a['id']}/keywords", json={"text": "Chicken Biriyani"}).raise_for_status()
-    client.post(f"/namespaces/{b['id']}/keywords", json={"text": "Chocolate Cake"}).raise_for_status()
+    """Same query must not cross-leak between namespaces."""
+    client.post("/keywords", json={"namespace": "iso_a", "text": "Chicken Biriyani"}).raise_for_status()
+    client.post("/keywords", json={"namespace": "iso_b", "text": "Chocolate Cake"}).raise_for_status()
 
     res_a = client.get("/search", params={"namespace": "iso_a", "q": "biriyani", "top_k": 5}).json()
     texts_a = {h["text"] for h in res_a["results"]}
@@ -42,8 +40,9 @@ def test_namespace_isolation(client):
 
 
 def test_search_by_name_or_id(client, maincourse):
-    by_name = client.get("/search", params={"namespace": maincourse["name"], "q": "fish", "top_k": 1}).json()
-    by_id = client.get("/search", params={"namespace": maincourse["id"], "q": "fish", "top_k": 1}).json()
+    ns_id = next(n["id"] for n in client.get("/namespaces").json() if n["name"] == maincourse)
+    by_name = client.get("/search", params={"namespace": maincourse, "q": "fish", "top_k": 1}).json()
+    by_id = client.get("/search", params={"namespace": ns_id, "q": "fish", "top_k": 1}).json()
     assert by_name["results"][0]["text"] == by_id["results"][0]["text"] == "Fish Curry"
 
 

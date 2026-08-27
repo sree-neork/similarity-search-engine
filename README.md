@@ -1,9 +1,9 @@
 # Similarity Search Engine
 
-A small, Dockerized REST service for **namespaced keyword similarity search**. Create
-namespaces (groups), add keywords to them, and search a namespace for a query keyword. Search
-tolerates **misspellings**, **abbreviations**, and **semantic / partial** matches — built to power
-**search-as-you-type** across many search boxes.
+A small, Dockerized REST service for **namespaced keyword similarity search**. Add keywords under a
+namespace (a group) — the namespace is created automatically the first time you use it — then search
+a namespace for a query keyword. Search tolerates **misspellings**, **abbreviations**, and
+**semantic / partial** matches — built to power **search-as-you-type** across many search boxes.
 
 > **Example:** with `Chicken Biriyani` stored in namespace `maincourse`, searching any of
 > `chkn biriyani`, `CB`, `Chicken`, or `biriyani` returns **Chicken Biriyani**.
@@ -79,6 +79,10 @@ rebuilds Qdrant from SQLite if the two ever drift.
 
 ### Adding a keyword (write path)
 
+You add keywords by **namespace name** — there is no separate "create namespace" step. If the
+namespace doesn't exist it's created and the keyword added to it; if it already exists the keyword
+is added directly.
+
 ```mermaid
 sequenceDiagram
     participant C as Client
@@ -87,11 +91,15 @@ sequenceDiagram
     participant EM as fastembed
     participant Q as Qdrant
 
-    C->>API: POST /namespaces/{id}/keywords {text | texts[]}
+    C->>API: POST /keywords {namespace, text | texts[]}
+    API->>DB: find namespace by name
+    alt namespace missing
+        API->>DB: create namespace
+    end
     API->>DB: insert keyword row(s) -> get ids
     API->>EM: embed(text) -> vector(s)
     API->>Q: upsert points {id, vector, payload}
-    API-->>C: 201 [keyword records]
+    API-->>C: 201 {namespace, namespace_created, created[]}
 ```
 
 Embeddings are computed **once at insert time**, so searches never have to embed stored data.
@@ -175,15 +183,10 @@ python scripts/seed_demo.py
 Or do it by hand:
 
 ```bash
-# create a namespace
-curl -X POST http://localhost:8000/namespaces \
+# add keywords (bulk) — the 'maincourse' namespace is created automatically if new
+curl -X POST http://localhost:8000/keywords \
   -H "Content-Type: application/json" \
-  -d '{"name":"maincourse","description":"Main course dishes"}'
-
-# add keywords (bulk)
-curl -X POST http://localhost:8000/namespaces/1/keywords \
-  -H "Content-Type: application/json" \
-  -d '{"texts":["Chicken Biriyani","Paneer Butter Masala","Fish Curry"]}'
+  -d '{"namespace":"maincourse","texts":["Chicken Biriyani","Paneer Butter Masala","Fish Curry"]}'
 
 # search (typo tolerant)
 curl "http://localhost:8000/search?namespace=maincourse&q=chkn%20biriyani&top_k=3"
@@ -195,23 +198,28 @@ Stop it with `docker compose down` (add `-v` to also wipe the data volumes).
 
 ## API reference
 
-### Namespaces
-| Method | Path                 | Body / notes                          |
-|--------|----------------------|---------------------------------------|
-| POST   | `/namespaces`        | `{"name": "...", "description": "?"}`  |
-| GET    | `/namespaces`        | `?limit=&offset=` — includes `keyword_count` |
-| GET    | `/namespaces/{id}`   |                                       |
-| PUT    | `/namespaces/{id}`   | `{"name": "?", "description": "?"}`    |
-| DELETE | `/namespaces/{id}`   | cascades to keywords (SQLite + Qdrant)|
-
 ### Keywords
-| Method | Path                          | Body / notes                                   |
-|--------|-------------------------------|------------------------------------------------|
-| POST   | `/namespaces/{id}/keywords`   | `{"text": "..."}` or `{"texts": ["...", ...]}` |
-| GET    | `/namespaces/{id}/keywords`   | `?limit=&offset=`                              |
-| GET    | `/keywords/{id}`              |                                                |
-| PUT    | `/keywords/{id}`             | `{"text": "..."}` — re-embeds                  |
-| DELETE | `/keywords/{id}`             |                                                |
+Namespaces are created implicitly here — no standalone create endpoint.
+
+| Method | Path                          | Body / notes                                                        |
+|--------|-------------------------------|---------------------------------------------------------------------|
+| POST   | `/keywords`                   | `{"namespace": "...", "text": "..."}` or `{"namespace": "...", "texts": [...]}` — creates the namespace if missing |
+| GET    | `/namespaces/{id}/keywords`   | `?limit=&offset=`                                                   |
+| GET    | `/keywords/{id}`              |                                                                     |
+| PUT    | `/keywords/{id}`             | `{"text": "..."}` — re-embeds                                       |
+| DELETE | `/keywords/{id}`             |                                                                     |
+
+`POST /keywords` returns `{"namespace", "namespace_id", "namespace_created", "created": [...]}`.
+
+### Namespaces (management)
+No create endpoint — namespaces come into existence when you add a keyword.
+
+| Method | Path                 | Body / notes                                 |
+|--------|----------------------|----------------------------------------------|
+| GET    | `/namespaces`        | `?limit=&offset=` — includes `keyword_count` |
+| GET    | `/namespaces/{id}`   |                                              |
+| PUT    | `/namespaces/{id}`   | `{"name": "?", "description": "?"}`           |
+| DELETE | `/namespaces/{id}`   | cascades to keywords (SQLite + Qdrant)       |
 
 ### Search
 `GET /search?namespace={id|name}&q={query}&top_k=10&min_score=0`

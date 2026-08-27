@@ -26,8 +26,16 @@ class NamespaceRead(BaseModel):
 
 # ---------- Keywords ----------
 class KeywordCreate(BaseModel):
-    """Accept a single `text` or a bulk `texts` list (at least one required)."""
+    """Add keyword(s) to a namespace (by name).
 
+    The namespace is resolved by name and created automatically if it does not
+    exist yet; if it already exists the keyword(s) are added to it directly.
+    Accepts a single `text` or a bulk `texts` list (at least one required).
+    """
+
+    namespace: str = Field(
+        min_length=1, max_length=200, description="Namespace name; created if it doesn't exist"
+    )
     text: Optional[str] = Field(default=None, min_length=1, max_length=500)
     texts: Optional[list[str]] = None
 
@@ -64,6 +72,15 @@ class KeywordRead(BaseModel):
     text: str
     created_at: datetime
     updated_at: datetime
+
+
+class KeywordsAdded(BaseModel):
+    """Result of adding keyword(s): reports the resolved namespace + created keywords."""
+
+    namespace: str
+    namespace_id: int
+    namespace_created: bool
+    created: list[KeywordRead]
 
 
 # ---------- Search ----------
