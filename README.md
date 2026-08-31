@@ -8,6 +8,9 @@ a namespace for a query keyword. Search tolerates **misspellings**, **abbreviati
 > **Example:** with `Chicken Biriyani` stored in namespace `maincourse`, searching any of
 > `chkn biriyani`, `CB`, `Chicken`, or `biriyani` returns **Chicken Biriyani**.
 
+> 📖 Want to understand the code itself? [**CODE_WALKTHROUGH.md**](CODE_WALKTHROUGH.md) traces
+> every file and function in order, from storing a keyword to searching it.
+
 ---
 
 ## Table of contents
